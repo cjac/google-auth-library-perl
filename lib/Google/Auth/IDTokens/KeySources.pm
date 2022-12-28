@@ -13,10 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-package Google::Auth::IDTokens::KeySources;
-
-use strict;
-use warnings;
+use v5.36;
+use feature 'class';
 
 use URI;
 use DateTime;
@@ -27,8 +25,12 @@ use LWP::UserAgent;
 use Crypt::PK::ECC;
 use Crypt::PK::RSA;
 use Crypt::X509;
+use Carp;
 
-our $VERSION = 0.02;
+
+class Google::Auth::IDTokens::KeySources 0.02 {
+
+}
 
 1;
 
@@ -40,11 +42,7 @@ our $VERSION = 0.02;
 # supported.
 #
 
-package Google::Auth::IDTokens::KeyInfo;
-
-use Carp;
-
-my $coder = JSON::XS->new->ascii->pretty->allow_nonref;
+class Google::Auth::IDTokens::KeyInfo 0.02 {
 
 ##
 # Create a public key info structure.
@@ -53,34 +51,30 @@ my $coder = JSON::XS->new->ascii->pretty->allow_nonref;
 # @param key [Crypt::PK::RSA,Crypt::PK::ECC] The key itself.
 # @param algorithm [String] The algorithm (normally `RS256` or `ES256`)
 #
-sub new
-{
-    my ( $class, $params ) = @_;
-    $class = ref $class if ref $class;
-    my $self = bless {
-        id        => $params->{id}        // undef,
-        key       => $params->{key}       // undef,
-        algorithm => $params->{algorithm} // undef,
-    }, $class;
-}
+
+  field $coder = JSON::XS->new->ascii->pretty->allow_nonref;
+  field $id :param;
+  field $key :param;
+  field $algorithm :param;
+
 
 ##
 # The key ID.
 # @return [String]
 #
-sub id { return $_[0]->{id} }
+  method id { return $id }
 
 ##
 # The key itself.
 # @return [OpenSSL::PKey::RSA,OpenSSL::PKey::EC]
 #
-sub key { return $_[0]->{key} }
+  method key { return $key }
 
 ##
 # The signature algorithm. (normally `RS256` or `ES256`)
 # @return [String]
 #
-sub algorithm { return $_[0]->{algorithm} }
+  method algorithm { return $algorithm }
 
 ##
 # Create a KeyInfo from a single JWK, which may be given as either a
@@ -91,18 +85,17 @@ sub algorithm { return $_[0]->{algorithm} }
 # @raise [KeySourceError] If the key could not be extracted from the
 #     JWK.
 #
-sub from_jwk
+method from_jwk($jwk)
 {
-    my ( $self, $jwk ) = @_;
-    $jwk = $self->ensure_json_parsed($jwk);
+    $jwk = $self->symbolize_keys($self->ensure_json_parsed($jwk));
 
     if ( $jwk->{kty} eq 'RSA' )
     {
-        $self->{key} = $self->extract_rsa_key($jwk);
+        $key = $self->extract_rsa_key($jwk);
     }
     elsif ( $jwk->{kty} eq 'EC' )
     {
-        $self->{key} = $self->extract_ec_key($jwk);
+        $key = $self->extract_ec_key($jwk);
     }
     elsif ( !defined $jwk->{kty} )
     {
@@ -112,10 +105,12 @@ sub from_jwk
     {
         die "Cannot use key type $jwk->{kty}";
     }
-    $self->{id}        = $jwk->{kid};
-    $self->{algorithm} = $jwk->{alg};
-
-    return $self;
+    $id        = $jwk->{kid};
+    $algorithm = $jwk->{alg};
+    return { key       => $key,
+             id        => $id,
+             algorithm => $algorithm
+           };
 }
 ##
 # Create an array of KeyInfo from a JWK Set, which may be given as
@@ -126,11 +121,9 @@ sub from_jwk
 # @raise [KeySourceError] If a key could not be extracted from the
 #     JWK Set.
 #
-sub from_jwk_set
+method from_jwk_set($jwk_set)
 {
-    my ( $self, $jwk_set ) = @_;
-    confess 'jwk_set is a required argument' unless $jwk_set;
-    $jwk_set = $self->ensure_json_parsed($jwk_set);
+    $jwk_set = $self->symbolize_keys($self->ensure_json_parsed($jwk_set));
     confess "No keys found in jwk set"
         unless ( exists $jwk_set->{keys}
         && ref $jwk_set->{keys} eq 'ARRAY' );
@@ -139,10 +132,8 @@ sub from_jwk_set
     return $jwks;
 }
 
-sub ensure_json_parsed
+method ensure_json_parsed($input)
 {
-    my ( $self, $input ) = @_;
-    confess 'input is a required argument' unless $input;
     return $input if ref $input;
     my $decoded = eval { $coder->decode($input) };
 
@@ -150,9 +141,8 @@ sub ensure_json_parsed
     return $decoded;
 }
 
-sub symbolize_keys
+method symbolize_keys($hash)
 {
-    my ( $self, $hash ) = @_;
     my $result = {};
     while ( my ( $key, $val ) = each %$hash )
     {
@@ -161,26 +151,23 @@ sub symbolize_keys
     return $result;
 }
 
-sub extract_rsa_key
+method extract_rsa_key($jwk)
 {
-    my ( $self, $jwk ) = @_;
-
     my $pk = Crypt::PK::RSA->new();
     $pk->import_key($jwk);
     return $pk;
 }
 
 # @private
-my $CURVE_NAME_MAP = {
+field $CURVE_NAME_MAP = {
     "P-256"     => "prime256v1",
     "P-384"     => "secp384r1",
     "P-521"     => "secp521r1",
     "secp256k1" => "secp256k1"
 };
 
-sub extract_ec_key
+method extract_ec_key($jwk)
 {
-    my ( $self, $jwk ) = @_;
     die "Unsupported EC curve $jwk->{crv}"
         unless exists $CURVE_NAME_MAP->{ $jwk->{crv} };
 
@@ -192,7 +179,7 @@ sub extract_ec_key
 
 1;
 
-package Google::Auth::IDTokens::StaticKeySource;
+class Google::Auth::IDTokens::StaticKeySource 0.02 {
 ##
 # A key source that contains a static set of keys.
 #
@@ -201,21 +188,24 @@ package Google::Auth::IDTokens::StaticKeySource;
 #
 # @param keys [Array<KeyInfo>] The keys
 #
-sub new
-{
-    my ( $class, $params ) = @_;
-    $class = ref $class if ref $class;
-    my $self = bless { current_keys => [ @{ $params->{keys} } ] }, $class;
-    return $self;
-}
+  field $keys :param;
+  field @current_keys;
+  ADJUST {
+    if ( ref $keys eq 'ARRAY' ){
+      @current_keys = @{ $keys }
+    }elsif( ! ref $keys ){
+      @current_keys = $keys
+    }
+  }
+
 
 ##
 # Return the current keys. Does not perform any refresh.
 #
 # @return [Array<KeyInfo>]
 #
-sub current_keys { return $_[0]->{current_keys} }
-*refresh_keys = \&current_keys;
+method current_keys { return @current_keys }
+method refresh_keys { return @current_keys }
 
 ##
 # Create a static key source containing a single key parsed from a
@@ -225,9 +215,8 @@ sub current_keys { return $_[0]->{current_keys} }
 # @param jwk [Hash,String] The JWK specification.
 # @return [StaticKeySource]
 #
-sub from_jwk
+method from_jwk($jwk)
 {
-    my ( $self, $jwk ) = @_;
     return Google::Auth::IDTokens::KeyInfo->new()->from_jwk($jwk);
 }
 
